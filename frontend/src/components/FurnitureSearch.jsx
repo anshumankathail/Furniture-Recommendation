@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import { getRecommendations } from "./api"; // import the function
 
 export default function FurnitureSearch() {
   const [query, setQuery] = useState("");
@@ -12,18 +12,9 @@ export default function FurnitureSearch() {
     e.preventDefault();
     setLoading(true);
 
-    const formData = new FormData();
-    formData.append("query", query);
-    formData.append("top_k", topK);
-    if (image) formData.append("image", image);
-
     try {
-      const response = await axios.post(
-        "http://127.0.0.1:8000/recommend",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      setResults(response.data.matches);
+      const matches = await getRecommendations(query, image, topK);
+      setResults(matches);
     } catch (error) {
       console.error("Error fetching recommendations:", error);
       setResults([]);
