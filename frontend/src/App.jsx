@@ -2,21 +2,13 @@ import { useState } from "react";
 import { getRecommendations } from "./api";
 
 function App() {
+  const [mode, setMode] = useState("text"); // "text" or "image"
   const [query, setQuery] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [results, setResults] = useState([]);
 
   const handleSearch = async () => {
-    if (!query && !imageFile) {
-      alert("Please provide either text or an image.");
-      return;
-    }
-    if (query && imageFile) {
-      alert("Please provide only text OR image, not both.");
-      return;
-    }
-
-    const matches = await getRecommendations(query, imageFile);
+    const matches = await getRecommendations(mode === "text" ? query : null, mode === "image" ? imageFile : null);
     setResults(matches);
   };
 
@@ -24,22 +16,47 @@ function App() {
     <div className="p-6">
       <h1 className="text-2xl mb-4">Furniture Recommendation</h1>
 
-      <input
-        type="text"
-        placeholder="Enter your query"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="border p-2 mr-2"
-        disabled={imageFile !== null} // disable if image selected
-      />
+      {/* Mode selection */}
+      <div className="mb-4">
+        <label className="mr-4">
+          <input
+            type="radio"
+            value="text"
+            checked={mode === "text"}
+            onChange={() => setMode("text")}
+            className="mr-1"
+          />
+          Text Search
+        </label>
+        <label>
+          <input
+            type="radio"
+            value="image"
+            checked={mode === "image"}
+            onChange={() => setMode("image")}
+            className="mr-1"
+          />
+          Image Search
+        </label>
+      </div>
 
-      <input
-        type="file"
-        accept="image/*"
-        onChange={(e) => setImageFile(e.target.files[0])}
-        className="mr-2"
-        disabled={query.length > 0} // disable if text entered
-      />
+      {/* Conditional input */}
+      {mode === "text" ? (
+        <input
+          type="text"
+          placeholder="Enter your query"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="border p-2 mr-2"
+        />
+      ) : (
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setImageFile(e.target.files[0])}
+          className="mr-2"
+        />
+      )}
 
       <button
         onClick={handleSearch}

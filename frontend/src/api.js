@@ -1,22 +1,24 @@
-import axios from "axios";
+export async function getRecommendations(query = null, imageFile = null, top_k = 5) {
+  const formData = new FormData();
 
-export const getRecommendations = async (query, imageFile) => {
-  try {
-    const formData = new FormData();
-
-    if (query) formData.append("query", query);
-    if (imageFile) formData.append("image", imageFile);
-    formData.append("top_k", 5);
-
-    const response = await axios.post("http://127.0.0.1:8000/recommend", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-
-    return response.data.matches;
-  } catch (error) {
-    console.error("Error fetching recommendations:", error);
-    return [];
+  if (query) {
+    formData.append("query", query);
+  } else if (imageFile) {
+    formData.append("image", imageFile);
   }
-};
+
+  formData.append("top_k", top_k);
+
+  const response = await fetch("http://localhost:8000/recommend", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API error: ${text}`);
+  }
+
+  const data = await response.json();
+  return data.matches || [];
+}
