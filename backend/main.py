@@ -4,9 +4,10 @@ import pandas as pd
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
+import uvicorn
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
 from pydantic import BaseModel
 
 from pinecone import Pinecone, ServerlessSpec
@@ -175,3 +176,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # use Render's assigned port, fallback to 8000 locally
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)
