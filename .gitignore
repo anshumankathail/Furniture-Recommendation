@@ -1,4 +1,5 @@
+# contains pinecone api key
 .env
-.venv
 
-backend/__pycache__
+# python virtual environment
+.venv

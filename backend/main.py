@@ -3,10 +3,10 @@ import pandas as pd
 from dotenv import load_dotenv
 
 import logging
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi import Request
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, cast, Optional
 
 from pinecone import Pinecone, ServerlessSpec
@@ -110,15 +110,18 @@ class QueryItem(BaseModel):
 @app.post("/recommend")
 async def recommend(
     query: Optional[str] = Form(None),
-    image: Optional[UploadFile] = File(None),  # still optional
+    image: Optional[UploadFile] = File(None),
     top_k: int = Form(5)
 ):
+    # ❌ Prevent both being sent together
+    if query and image:
+        raise HTTPException(status_code=400, detail="Please provide either text or an image, not both.")
+
     # 1️⃣ Text embedding
     text_embedding = get_text_embedding(query) if query else [0.0] * TEXT_DIM
 
     # 2️⃣ Image embedding
-    img_embedding: List[float]
-    if image is not None and image.filename:  # check that an actual file is uploaded
+    if image and image.filename:
         image_bytes = await image.read()
         img_embedding = get_image_embedding(image_bytes)
     else:
@@ -136,30 +139,10 @@ async def recommend(
 
     # 5️⃣ Extract matches safely
     matches: List[Dict[str, Any]] = []
-    matches_raw = None
-    # Prefer attribute access (works for Pinecone SDK objects)
-    if hasattr(response, "matches"):
-        try:
-            matches_raw = getattr(response, "matches")
-        except Exception:
-            matches_raw = None
-    # Fallback to dict-like access, but guard against non-dict .get implementations
-    if matches_raw is None and isinstance(response, dict):
-        try:
-            matches_raw = response["matches"] if "matches" in response else []
-        except Exception:
-            matches_raw = None
-    if matches_raw is None:
-        matches_raw = []
+    matches_raw = getattr(response, "matches", []) or []
 
     for match in matches_raw:
-        if isinstance(match, dict):
-            metadata = match.get("metadata", {})
-        else:
-            try:
-                metadata = getattr(match, "metadata", {}) or {}
-            except Exception:
-                metadata = {}
+        metadata = getattr(match, "metadata", {}) if not isinstance(match, dict) else match.get("metadata", {})
         matches.append(metadata)
 
     return {"matches": matches}
@@ -173,3 +156,10 @@ logging.basicConfig(level=logging.INFO)
 async def all_exception_handler(request: Request, exc: Exception):
     logging.error(f"Error: {exc}", exc_info=True)
     return PlainTextResponse(str(exc), status_code=500)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
