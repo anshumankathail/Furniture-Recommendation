@@ -12,19 +12,21 @@ from pydantic import BaseModel
 from pinecone import Pinecone, ServerlessSpec
 from sentence_transformers import SentenceTransformer
 
-# -------------------------
+
+
 # Load environment variables
-# -------------------------
 load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
 TEXT_INDEX = "furniture-text"
 IMAGE_INDEX = "furniture-image"
 
-# -------------------------
+
+
 # Load embeddings
-# -------------------------
-DATA_PATH = "../data/product_embeddings.parquet"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "..", "data", "product_embeddings.parquet")
+
 df = pd.read_parquet(DATA_PATH)
 
 
@@ -172,3 +174,4 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
