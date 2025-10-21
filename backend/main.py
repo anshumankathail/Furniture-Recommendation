@@ -103,7 +103,7 @@ def upsert_embeddings():
     print(f"✅ Uploaded {len(text_vectors)} text vectors and {len(image_vectors)} image vectors.")
 
 # uncomment and run only for the first time
-upsert_embeddings()
+# upsert_embeddings()
 
 
 
@@ -115,33 +115,24 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Text Embedding Model
 TEXT_MODEL_PATH = os.path.join(MODELS_DIR, "text_model")
+
 if os.path.exists(TEXT_MODEL_PATH):
     embedding_model = SentenceTransformer(TEXT_MODEL_PATH)
     print("✅ Loaded local text model.")
-else:
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    embedding_model.save(TEXT_MODEL_PATH)
-    print("⬇️ Downloaded and saved text model.")
 
 
 
 # Image Embedding Model
 IMAGE_MODEL_PATH = os.path.join(MODELS_DIR, "image_model.pth")
-try:
-    weights = ViT_B_16_Weights.DEFAULT
-    image_model = vit_b_16(weights=None)
-    if os.path.exists(IMAGE_MODEL_PATH):
-        image_model.load_state_dict(torch.load(IMAGE_MODEL_PATH, map_location="cpu"))
-        print("✅ Loaded local image model.")
-    else:
-        pretrained_model = vit_b_16(weights=weights)
-        torch.save(pretrained_model.state_dict(), IMAGE_MODEL_PATH)
-        image_model.load_state_dict(pretrained_model.state_dict())
-        print("⬇️ Downloaded and saved image model.")
-    image_model.eval()
-except Exception as e:
-    print(f"⚠️ Image model load failed: {e}")
-    image_model = None
+
+weights = ViT_B_16_Weights.DEFAULT
+image_model = vit_b_16(weights=None)
+
+if os.path.exists(IMAGE_MODEL_PATH):
+    image_model.load_state_dict(torch.load(IMAGE_MODEL_PATH, map_location="cpu"))
+    print("✅ Loaded local image model.")
+
+image_model.eval()
 
 
 def get_text_embedding(text: str) -> List[float]:
@@ -219,6 +210,7 @@ app.add_middleware(
 )
 
 
+# resolve port issue in Render (comment out for local testing)
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
