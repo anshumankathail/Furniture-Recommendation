@@ -8,10 +8,11 @@ import uvicorn
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
-from pydantic import BaseModel
 
 from pinecone import Pinecone, ServerlessSpec
 from sentence_transformers import SentenceTransformer
+from torchvision.models import vit_b_16, ViT_B_16_Weights
+import torch
 
 
 
@@ -35,7 +36,6 @@ df = pd.read_parquet(DATA_PATH)
 # Initialize Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-# Create text index if missing
 if TEXT_INDEX not in [i["name"] for i in pc.list_indexes()]:
     pc.create_index(
         name=TEXT_INDEX,
@@ -44,7 +44,6 @@ if TEXT_INDEX not in [i["name"] for i in pc.list_indexes()]:
         spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
-# Create image index if missing
 if IMAGE_INDEX not in [i["name"] for i in pc.list_indexes()]:
     pc.create_index(
         name=IMAGE_INDEX,
@@ -58,13 +57,12 @@ image_index = pc.Index(IMAGE_INDEX)
 
 
 
-# Upsert embeddings
+# Upsert embeddings (run once)
 def upsert_embeddings():
     text_vectors = []
     image_vectors = []
 
     for _, row in df.iterrows():
-        # Text embeddings
         text_vectors.append({
             "id": f"text_{row['uniq_id']}",
             "values": row['text_embedding'],
@@ -80,7 +78,6 @@ def upsert_embeddings():
                 "image_url": row.get("image_url", "")
             }
         })
-        # Image embeddings
         image_vectors.append({
             "id": f"image_{row['uniq_id']}",
             "values": row['image_embedding'],
@@ -97,30 +94,74 @@ def upsert_embeddings():
             }
         })
 
-    # Upsert in batches
     batch_size = 100
     for i in range(0, len(text_vectors), batch_size):
-        text_index.upsert(vectors=text_vectors[i:i+batch_size])
+        text_index.upsert(vectors=text_vectors[i:i + batch_size])
     for i in range(0, len(image_vectors), batch_size):
-        image_index.upsert(vectors=image_vectors[i:i+batch_size])
+        image_index.upsert(vectors=image_vectors[i:i + batch_size])
 
     print(f"✅ Uploaded {len(text_vectors)} text vectors and {len(image_vectors)} image vectors.")
 
 # uncomment and run only for the first time
-# upsert_embeddings() 
+upsert_embeddings()
 
 
 
-# Sentence Transformer
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+# Load or Download Models
+MODELS_DIR = os.path.join(BASE_DIR, "..", "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+
+
+# Text Embedding Model
+TEXT_MODEL_PATH = os.path.join(MODELS_DIR, "text_model")
+if os.path.exists(TEXT_MODEL_PATH):
+    embedding_model = SentenceTransformer(TEXT_MODEL_PATH)
+    print("✅ Loaded local text model.")
+else:
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embedding_model.save(TEXT_MODEL_PATH)
+    print("⬇️ Downloaded and saved text model.")
+
+
+
+# Image Embedding Model
+IMAGE_MODEL_PATH = os.path.join(MODELS_DIR, "image_model.pth")
+try:
+    weights = ViT_B_16_Weights.DEFAULT
+    image_model = vit_b_16(weights=None)
+    if os.path.exists(IMAGE_MODEL_PATH):
+        image_model.load_state_dict(torch.load(IMAGE_MODEL_PATH, map_location="cpu"))
+        print("✅ Loaded local image model.")
+    else:
+        pretrained_model = vit_b_16(weights=weights)
+        torch.save(pretrained_model.state_dict(), IMAGE_MODEL_PATH)
+        image_model.load_state_dict(pretrained_model.state_dict())
+        print("⬇️ Downloaded and saved image model.")
+    image_model.eval()
+except Exception as e:
+    print(f"⚠️ Image model load failed: {e}")
+    image_model = None
+
 
 def get_text_embedding(text: str) -> List[float]:
     return embedding_model.encode(text).tolist()
 
-def get_image_embedding(file_bytes: bytes) -> List[float]:
-    # Placeholder: replace with actual image model if needed
-    return [0.0] * 1000
 
+def get_image_embedding(file_bytes: bytes) -> List[float]:
+    if image_model is None:
+        return [0.0] * 1000
+    from PIL import Image
+    from io import BytesIO
+    transform = ViT_B_16_Weights.DEFAULT.transforms()
+    try:
+        img = Image.open(BytesIO(file_bytes)).convert('RGB')
+        img_t = transform(img).unsqueeze(0)
+        with torch.no_grad():
+            emb = image_model(img_t)
+        return emb.squeeze().numpy().tolist()
+    except Exception:
+        return [0.0] * 1000
 
 
 # FastAPI app
@@ -128,6 +169,7 @@ app = FastAPI(title="Furniture Recommendation API")
 
 TEXT_DIM = 384
 IMAGE_DIM = 1000
+
 
 @app.post("/recommend")
 async def recommend(
@@ -150,7 +192,6 @@ async def recommend(
     else:
         return {"matches": []}
 
-    # Extract matches
     matches: List[Dict[str, Any]] = []
     for match in getattr(response, "matches", []) or []:
         metadata = getattr(match, "metadata", {}) if not isinstance(match, dict) else match.get("metadata", {})
@@ -160,14 +201,15 @@ async def recommend(
     return {"matches": matches}
 
 
-
 # Logging & CORS
 logging.basicConfig(level=logging.INFO)
+
 
 @app.exception_handler(Exception)
 async def all_exception_handler(request: Request, exc: Exception):
     logging.error(f"Error: {exc}", exc_info=True)
     return PlainTextResponse(str(exc), status_code=500)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -178,5 +220,5 @@ app.add_middleware(
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # use Render's assigned port, fallback to 8000 locally
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

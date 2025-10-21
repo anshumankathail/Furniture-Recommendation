@@ -3,3 +3,6 @@
 
 # python virtual environment
 .venv
+
+# save models to reduce RAM usage during deployment
+models
